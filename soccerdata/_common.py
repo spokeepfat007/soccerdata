@@ -526,7 +526,7 @@ class BaseAsyncRequestsReader(BaseReader):
         for i in range(5):
             try:
                 session = self._get_session()
-                response = await session.get(url)
+                response = await session.get(url, verify=False)
                 
                 if var is not None:
                     if isinstance(var, str):

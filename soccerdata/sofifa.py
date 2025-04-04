@@ -77,18 +77,30 @@ class SoFIFA(BaseAsyncRequestsReader):
             data_dir=data_dir,
         )
         self.rate_limit = 1
-        if versions == "latest":
-            self.versions = self.read_versions().tail(n=1)
-        elif versions == "all":
-            self.versions = self.read_versions()
-        elif isinstance(versions, int):
-            self.versions = self.read_versions().loc[[versions]]
-        elif isinstance(versions, list) and all(isinstance(v, int) for v in versions):
-            self.versions = self.read_versions().loc[versions]
-        else:
-            raise ValueError(f"Invalid value for versions: {versions}")
+        self.versions = pd.DataFrame()
+        self.versions_param = versions
 
-    def read_leagues(self) -> pd.DataFrame:
+
+    async def _initialize_versions(self) -> None:
+        """Fetch and set versions based on the initialization parameter."""
+        versions_df = await self.read_versions()
+        if isinstance(self.versions_param, str):
+            if self.versions_param == "latest":
+                self.versions = versions_df.tail(n=1)
+            elif self.versions_param == "all":
+                self.versions = versions_df
+            else:
+                raise ValueError(f"Invalid versions string: {self.versions_param}")
+        elif isinstance(self.versions_param, int):
+            self.versions = versions_df.loc[[self.versions_param]]
+        elif isinstance(self.versions_param, list) and all(isinstance(v, int) for v in self.versions_param):
+            self.versions = versions_df.loc[self.versions_param]
+        else:
+            raise ValueError("Invalid versions parameter")
+
+
+        
+    async def read_leagues(self) -> pd.DataFrame:
         """Retrieve selected leagues from the datasource.
 
         Returns
@@ -98,7 +110,7 @@ class SoFIFA(BaseAsyncRequestsReader):
         # read home page (overview)
         filepath = self.data_dir / "leagues.json"
         urlmask = SO_FIFA_API + "/api/league"
-        reader = self.get(urlmask, filepath)
+        reader = await self.get(urlmask, filepath)
         response = json.load(reader)
 
         # extract league links
@@ -119,7 +131,7 @@ class SoFIFA(BaseAsyncRequestsReader):
             .loc[self._selected_leagues.keys()]
         )
 
-    def read_versions(self, max_age: Union[int, timedelta] = 1) -> pd.DataFrame:
+    async def read_versions(self, max_age: Union[int, timedelta] = 1) -> pd.DataFrame:
         """Retrieve available FIFA releases and rating updates.
 
         Parameters
@@ -139,7 +151,7 @@ class SoFIFA(BaseAsyncRequestsReader):
         """
         # read home page (overview)
         filepath = self.data_dir / "index.html"
-        reader = self.get(SO_FIFA_API, filepath, max_age)
+        reader = await self.get(SO_FIFA_API, filepath, max_age)
 
         # extract FIFA releases
         versions = []
@@ -149,7 +161,7 @@ class SoFIFA(BaseAsyncRequestsReader):
             filepath = self.data_dir / f"updates_{fifa_edition}.html"
             url = SO_FIFA_API + node_fifa_edition.get("value")
             # check for updates on latest FIFA edition only
-            reader = self.get(url, filepath, max_age=max_age if i == 0 else None)
+            reader = await self.get(url, filepath, max_age=max_age if i == 0 else None)
             tree = html.parse(reader)
 
             for node_fifa_update in tree.xpath("//header/section/p/select[2]/option"):
@@ -164,7 +176,7 @@ class SoFIFA(BaseAsyncRequestsReader):
                 )
         return pd.DataFrame(versions).set_index("version_id").sort_index()
 
-    def read_teams(self) -> pd.DataFrame:
+    async def read_teams(self) -> pd.DataFrame:
         """Retrieve all teams for the selected leagues.
 
         Returns
@@ -176,7 +188,7 @@ class SoFIFA(BaseAsyncRequestsReader):
         filemask = "teams_{}_{}.html"
 
         # get league IDs
-        leagues = self.read_leagues()
+        leagues = await self.read_leagues()
 
         # collect teams
         teams = []
@@ -193,7 +205,7 @@ class SoFIFA(BaseAsyncRequestsReader):
             # read html page (league overview)
             filepath = self.data_dir / filemask.format(league_id, version_id)
             url = urlmask.format(league_id, version_id)
-            reader = self.get(url, filepath)
+            reader = await self.get(url, filepath)
 
             # extract team links
             tree = html.parse(reader)
@@ -215,7 +227,7 @@ class SoFIFA(BaseAsyncRequestsReader):
         # return data frame
         return pd.DataFrame(teams).replace({"team": TEAMNAME_REPLACEMENTS}).set_index(["team_id"])
 
-    def read_players(self, team: Optional[Union[str, list[str]]] = None) -> pd.DataFrame:
+    async def read_players(self, team: Optional[Union[str, list[str]]] = None) -> pd.DataFrame:
         """Retrieve all players for the selected leagues.
 
         Parameters
@@ -237,7 +249,7 @@ class SoFIFA(BaseAsyncRequestsReader):
         filemask = str(self.data_dir / "players_{}_{}.html")
 
         # get list of teams
-        df_teams = self.read_teams()
+        df_teams = await self.read_teams()
 
         if team is not None:
             teams_to_check = add_standardized_team_name(team)
@@ -264,7 +276,7 @@ class SoFIFA(BaseAsyncRequestsReader):
             # read html page (team overview)
             filepath = self.data_dir / filemask.format(team_id, version_id)
             url = urlmask.format(team_id, version_id)
-            reader = self.get(url, filepath)
+            reader = await self.get(url, filepath)
 
             # extract player links
             tree = html.parse(reader)
@@ -288,7 +300,7 @@ class SoFIFA(BaseAsyncRequestsReader):
         # return data frame
         return pd.DataFrame(players).set_index(["player_id"])
 
-    def read_team_ratings(self) -> pd.DataFrame:
+    async def read_team_ratings(self) -> pd.DataFrame:
         """Retrieve ratings for all teams in the selected leagues.
 
         Returns
@@ -346,7 +358,7 @@ class SoFIFA(BaseAsyncRequestsReader):
             # read html page (league overview)
             filepath = self.data_dir / filemask.format(league_id, version_id)
             url = urlmask.format(league_id, version_id)
-            reader = self.get(url, filepath)
+            reader = await self.get(url, filepath)
 
             # extract team links
             tree = html.parse(reader)
@@ -372,7 +384,7 @@ class SoFIFA(BaseAsyncRequestsReader):
             .sort_index()
         )
 
-    def read_player_ratings(
+    async def read_player_ratings(
         self,
         team: Optional[Union[str, list[str]]] = None,
         player: Optional[Union[int, list[int]]] = None,
@@ -458,7 +470,7 @@ class SoFIFA(BaseAsyncRequestsReader):
             # read html page (player overview)
             filepath = self.data_dir / filemask.format(player, version_id)
             url = urlmask.format(player, version_id)
-            reader = self.get(url, filepath)
+            reader = await self.get(url, filepath)
 
             # extract scores one-by-one
             tree = html.parse(reader, parser=html.HTMLParser(encoding="utf8"))
