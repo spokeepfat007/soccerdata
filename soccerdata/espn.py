@@ -165,7 +165,7 @@ class ESPN(BaseAsyncRequestsReader):
         urlmask = ESPN_API + "/{}/summary?event={}"
         filemask = "Summary_{}.json"
 
-        df_schedule = self.read_schedule().reset_index()
+        df_schedule = (await self.read_schedule()).reset_index()
         if match_id is not None:
             iterator = df_schedule[
                 df_schedule.game_id.isin([match_id] if isinstance(match_id, int) else match_id)
@@ -238,7 +238,7 @@ class ESPN(BaseAsyncRequestsReader):
         urlmask = ESPN_API + "/{}/summary?event={}"
         filemask = "Summary_{}.json"
 
-        df_schedule = self.read_schedule().reset_index()
+        df_schedule = (await self.read_schedule()).reset_index()
         if match_id is not None:
             iterator = df_schedule[
                 df_schedule.game_id.isin([match_id] if isinstance(match_id, int) else match_id)
