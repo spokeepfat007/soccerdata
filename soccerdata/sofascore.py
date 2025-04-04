@@ -9,14 +9,14 @@ from typing import Callable, Optional, Union
 
 import pandas as pd
 
-from ._common import BaseRequestsReader, make_game_id
+from ._common import BaseAsyncRequestsReader, make_game_id
 from ._config import DATA_DIR, NOCACHE, NOSTORE, TEAMNAME_REPLACEMENTS
 
 SOFASCORE_DATADIR = DATA_DIR / "Sofascore"
 SOFASCORE_API = "https://api.sofascore.com/api/v1/"
 
 
-class Sofascore(BaseRequestsReader):
+class Sofascore(BaseAsyncRequestsReader):
     """Provides pd.DataFrames from data available at http://www.sofascore.com.
 
     Data will be downloaded as necessary and cached locally in

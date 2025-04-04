@@ -10,7 +10,7 @@ import pandas as pd
 from lxml import etree, html
 
 from ._common import (
-    BaseRequestsReader,
+    BaseAsyncRequestsReader,
     SeasonCode,
     add_alt_team_names,
     make_game_id,
@@ -30,7 +30,7 @@ BIG_FIVE_DICT = {
 }
 
 
-class FBref(BaseRequestsReader):
+class FBref(BaseAsyncRequestsReader):
     """Provides pd.DataFrames from data at http://fbref.com.
 
     Data will be downloaded as necessary and cached locally in

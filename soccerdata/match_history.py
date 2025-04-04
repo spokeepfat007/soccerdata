@@ -6,7 +6,7 @@ from typing import IO, Callable, Optional, Union
 
 import pandas as pd
 
-from ._common import BaseRequestsReader, make_game_id
+from ._common import BaseAsyncRequestsReader, make_game_id
 from ._config import DATA_DIR, NOCACHE, NOSTORE, TEAMNAME_REPLACEMENTS, logger
 
 MATCH_HISTORY_DATA_DIR = DATA_DIR / "MatchHistory"
@@ -31,7 +31,7 @@ def _parse_csv(raw_data: IO[bytes], lkey: str, skey: str) -> pd.DataFrame:
     return df_games
 
 
-class MatchHistory(BaseRequestsReader):
+class MatchHistory(BaseAsyncRequestsReader):
     """Provides pd.DataFrames from CSV files available at http://www.football-data.co.uk/data.php.
 
     Data will be downloaded as necessary and cached locally in

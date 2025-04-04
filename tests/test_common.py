@@ -9,7 +9,7 @@ import time_machine
 
 import soccerdata
 from soccerdata._common import (
-    BaseRequestsReader,
+    BaseAsyncRequestsReader,
     SeasonCode,
     add_alt_team_names,
     add_standardized_team_name,
@@ -20,50 +20,50 @@ from soccerdata._common import (
 # _download_and_save
 
 
-def test_download_and_save_not_cached(tmp_path):
-    reader = BaseRequestsReader()
+async def test_download_and_save_not_cached(tmp_path):
+    reader = BaseAsyncRequestsReader()
     url = "http://api.clubelo.com/Barcelona"
     filepath = tmp_path / "Barcelona.csv"
-    data = reader._download_and_save(url, filepath)
+    data = await reader._download_and_save(url, filepath)
     assert isinstance(pd.read_csv(data), pd.DataFrame)
 
 
-def test_download_and_save_cached(tmp_path):
-    reader = BaseRequestsReader()
+async def test_download_and_save_cached(tmp_path):
+    reader = BaseAsyncRequestsReader()
     url = "http://api.clubelo.com/Barcelona"
     filepath = tmp_path / "Barcelona.csv"
-    data = reader._download_and_save(url, filepath)
-    data = reader._download_and_save(url, filepath)
+    data = await reader._download_and_save(url, filepath)
+    data = await reader._download_and_save(url, filepath)
     assert isinstance(pd.read_csv(data), pd.DataFrame)
 
 
-def test_download_and_save_no_cache(tmp_path):
-    reader = BaseRequestsReader(no_cache=True)
+async def test_download_and_save_no_cache(tmp_path):
+    reader = BaseAsyncRequestsReader(no_cache=True)
     url = "http://api.clubelo.com/Barcelona"
     filepath = tmp_path / "Barcelona.csv"
     filepath.write_text("bogus")
-    data = reader._download_and_save(url, filepath)
+    data = await reader._download_and_save(url, filepath)
     assert len(pd.read_csv(data)) > 1
 
 
-def test_download_and_save_no_store_no_filepath():
-    reader = BaseRequestsReader(no_store=True)
+async def test_download_and_save_no_store_no_filepath():
+    reader = BaseAsyncRequestsReader(no_store=True)
     url = "http://api.clubelo.com/Barcelona"
-    data = reader._download_and_save(url, filepath=None)
+    data = await reader._download_and_save(url, filepath=None)
     assert isinstance(pd.read_csv(data), pd.DataFrame)
 
 
-def test_download_and_save_no_cache_filepath(tmp_path):
-    reader = BaseRequestsReader(no_store=True)
+async def test_download_and_save_no_cache_filepath(tmp_path):
+    reader = BaseAsyncRequestsReader(no_store=True)
     url = "http://api.clubelo.com/Barcelona"
     filepath = tmp_path / "Barcelona.csv"
-    data = reader._download_and_save(url, filepath)
+    data = await reader._download_and_save(url, filepath)
     assert isinstance(pd.read_csv(data), pd.DataFrame)
     assert not filepath.exists()
 
 
 def test_download_and_save_variable_no_store_no_filepath():
-    reader = BaseRequestsReader(no_store=True)
+    reader = BaseAsyncRequestsReader(no_store=True)
     url = "https://understat.com/"
     data = reader._download_and_save(url, filepath=None, var="statData")
     stats = json.load(data)
@@ -158,7 +158,7 @@ def test_standardize_colnames():
 
 
 def test_is_complete():
-    reader = BaseRequestsReader(no_store=True)
+    reader = BaseAsyncRequestsReader(no_store=True)
     with time_machine.travel(datetime(2020, 12, 25, 1, 24, tzinfo=timezone.utc)):
         assert reader._is_complete("ENG-Premier League", "1920")
         assert not reader._is_complete("ENG-Premier League", "2021")
@@ -173,13 +173,13 @@ def test_is_complete():
 
 def test_is_complete_default_value(mocker):
     mocker.patch.object(soccerdata._common, "LEAGUE_DICT", {"FAKE-Dummy League": {}})
-    reader = BaseRequestsReader(no_store=True)
+    reader = BaseAsyncRequestsReader(no_store=True)
     with time_machine.travel(datetime(2020, 12, 25, 1, 24, tzinfo=timezone.utc)):
         assert reader._is_complete("FAKE-Dummy League", "1920")
 
 
 def test_is_complete_undefined_league(mocker):  # noqa: ARG001
-    reader = BaseRequestsReader(no_store=True)
+    reader = BaseAsyncRequestsReader(no_store=True)
     with pytest.raises(
         ValueError,
         match="Invalid league 'FAKE-Dummy League'",

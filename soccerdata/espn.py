@@ -9,7 +9,7 @@ from typing import Callable, Optional, Union
 
 import pandas as pd
 
-from ._common import BaseRequestsReader, make_game_id, standardize_colnames
+from ._common import BaseAsyncRequestsReader, make_game_id, standardize_colnames
 from ._config import DATA_DIR, NOCACHE, NOSTORE, TEAMNAME_REPLACEMENTS, logger
 
 # http://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/summary?event=513466
@@ -21,7 +21,7 @@ ESPN_DATADIR = DATA_DIR / "ESPN"
 ESPN_API = "http://site.api.espn.com/apis/site/v2/sports/soccer"
 
 
-class ESPN(BaseRequestsReader):
+class ESPN(BaseAsyncRequestsReader):
     """Provides pd.DataFrames from JSON api available at http://site.api.espn.com.
 
     Data will be downloaded as necessary and cached locally in
@@ -80,7 +80,7 @@ class ESPN(BaseRequestsReader):
         )
         self.seasons = seasons  # type: ignore
 
-    def read_schedule(self, force_cache: bool = False) -> pd.DataFrame:
+    async def read_schedule(self, force_cache: bool = False) -> pd.DataFrame:
         """Retrieve the game schedule for the selected leagues and seasons.
 
         Parameters
@@ -106,7 +106,7 @@ class ESPN(BaseRequestsReader):
 
             url = urlmask.format(lkey, start_date)
             filepath = self.data_dir / filemask.format(lkey, start_date)
-            reader = self.get(url, filepath)
+            reader = await self.get(url, filepath)
             data = json.load(reader)
 
             match_dates = [
@@ -117,7 +117,7 @@ class ESPN(BaseRequestsReader):
                 url = urlmask.format(lkey, date)
                 filepath = self.data_dir / filemask.format(lkey, date)
                 current_season = not self._is_complete(lkey, skey)
-                reader = self.get(url, filepath, no_cache=current_season and not force_cache)
+                reader = await self.get(url, filepath, no_cache=current_season and not force_cache)
 
                 data = json.load(reader)
                 df_list.extend(
@@ -145,7 +145,7 @@ class ESPN(BaseRequestsReader):
             .sort_index()
         )
 
-    def read_matchsheet(self, match_id: Optional[Union[int, list[int]]] = None) -> pd.DataFrame:
+    async def read_matchsheet(self, match_id: Optional[Union[int, list[int]]] = None) -> pd.DataFrame:
         """Retrieve match sheets for the selected leagues and seasons.
 
         Parameters
@@ -181,7 +181,7 @@ class ESPN(BaseRequestsReader):
         for i, match in iterator.iterrows():
             url = urlmask.format(match["league_id"], match["game_id"])
             filepath = self.data_dir / filemask.format(match["game_id"])
-            reader = self.get(url, filepath)
+            reader = await self.get(url, filepath)
 
             data = json.load(reader)
             for i in range(2):
@@ -216,7 +216,7 @@ class ESPN(BaseRequestsReader):
             .sort_index()
         )
 
-    def read_lineup(  # noqa: C901
+    async def read_lineup(  # noqa: C901
         self, match_id: Optional[Union[int, list[int]]] = None
     ) -> pd.DataFrame:
         """Retrieve lineups for the selected leagues and seasons.
@@ -254,7 +254,7 @@ class ESPN(BaseRequestsReader):
         for i, match in iterator.iterrows():
             url = urlmask.format(match["league_id"], match["game_id"])
             filepath = self.data_dir / filemask.format(match["game_id"])
-            reader = self.get(url, filepath)
+            reader = await self.get(url, filepath)
 
             data = json.load(reader)
             for i in range(2):

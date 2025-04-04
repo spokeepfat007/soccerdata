@@ -10,14 +10,14 @@ from typing import Callable, Optional, Union
 import pandas as pd
 from lxml import html
 
-from ._common import BaseRequestsReader, add_standardized_team_name, standardize_colnames
+from ._common import BaseAsyncRequestsReader, add_standardized_team_name, standardize_colnames
 from ._config import DATA_DIR, NOCACHE, NOSTORE, TEAMNAME_REPLACEMENTS, logger
 
 SO_FIFA_DATADIR = DATA_DIR / "SoFIFA"
 SO_FIFA_API = "https://sofifa.com"
 
 
-class SoFIFA(BaseRequestsReader):
+class SoFIFA(BaseAsyncRequestsReader):
     """Provides pd.DataFrames from data at http://sofifa.com.
 
     Data will be downloaded as necessary and cached locally in

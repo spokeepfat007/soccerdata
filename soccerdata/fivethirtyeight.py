@@ -7,14 +7,14 @@ from typing import Callable, Optional, Union
 
 import pandas as pd
 
-from ._common import BaseRequestsReader, make_game_id, standardize_colnames
+from ._common import BaseAsyncRequestsReader, make_game_id, standardize_colnames
 from ._config import DATA_DIR, NOCACHE, NOSTORE, TEAMNAME_REPLACEMENTS
 
 FIVETHIRTYEIGHT_DATA_DIR = DATA_DIR / "FiveThirtyEight"
 FIVETHIRTYEIGHT_API = "https://projects.fivethirtyeight.com/soccer-predictions"
 
 
-class FiveThirtyEight(BaseRequestsReader):
+class FiveThirtyEight(BaseAsyncRequestsReader):
     """Provides pd.DataFrames from FiveThirtyEight's "Club Soccer Predictions" project.
 
     Data will be downloaded as necessary and cached locally in

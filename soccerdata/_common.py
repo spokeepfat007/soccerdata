@@ -13,14 +13,18 @@ from pathlib import Path
 from typing import IO, Callable, Optional, Union
 
 import cloudscraper
+import asyncio
 import numpy as np
 import pandas as pd
 import requests
 import selenium
 import undetected_chromedriver as uc
+from curl_cffi.requests import AsyncSession
+from curl_cffi.requests.impersonate import BrowserType
 from dateutil.relativedelta import relativedelta
 from packaging import version
 from selenium.common.exceptions import JavascriptException, WebDriverException
+
 
 from ._config import DATA_DIR, LEAGUE_DICT, MAXAGE, TEAMNAME_REPLACEMENTS, logger
 
@@ -38,7 +42,7 @@ class SeasonCode(Enum):
     MULTI_YEAR = "multi-year"
 
     @staticmethod
-    def from_league(league: str) -> "SeasonCode":
+    async def from_league(league: str) -> "SeasonCode":
         """Return the default season code for a league.
 
         Parameters
@@ -62,11 +66,11 @@ class SeasonCode(Enum):
         if "season_code" in select_league_dict:
             return SeasonCode(select_league_dict["season_code"])
         start_month = datetime.strptime(  # noqa: DTZ007
-            select_league_dict.get("season_start", "Aug"),
+            await select_league_dict.get("season_start", "Aug"),
             "%b",
         ).month
         end_month = datetime.strptime(  # noqa: DTZ007
-            select_league_dict.get("season_end", "May"),
+            await select_league_dict.get("season_end", "May"),
             "%b",
         ).month
         return SeasonCode.MULTI_YEAR if (end_month - start_month) < 0 else SeasonCode.SINGLE_YEAR
@@ -263,7 +267,7 @@ class BaseReader(ABC):
             logger.info("Saving cached data to %s", self.data_dir)
             self.data_dir.mkdir(parents=True, exist_ok=True)
 
-    def get(
+    async def get(
         self,
         url: str,
         filepath: Optional[Path] = None,
@@ -303,7 +307,7 @@ class BaseReader(ABC):
         is_cached = self._is_cached(filepath, max_age)
         if no_cache or self.no_cache or not is_cached:
             logger.debug("Scraping %s", url)
-            return self._download_and_save(url, filepath, var)
+            return await self._download_and_save(url, filepath, var)
         logger.debug("Retrieving %s from cache", url)
         if filepath is None:
             raise ValueError("No filepath provided for cached data.")
@@ -355,7 +359,7 @@ class BaseReader(ABC):
         return not cache_invalid and filepath is not None and filepath.exists()
 
     @abstractmethod
-    def _download_and_save(
+    async def _download_and_save(
         self,
         url: str,
         filepath: Optional[Path] = None,
@@ -480,8 +484,8 @@ class BaseReader(ABC):
         self._season_ids = [self._season_code.parse(s) for s in seasons]
 
 
-class BaseRequestsReader(BaseReader):
-    """Base class for readers that use the Python requests module."""
+class BaseAsyncRequestsReader(BaseReader):
+    """Base clss for readers that use curl_cuffy module for asynchronous  requests"""
 
     def __init__(
         self,
@@ -492,8 +496,8 @@ class BaseRequestsReader(BaseReader):
         no_cache: bool = False,
         no_store: bool = False,
         data_dir: Path = DATA_DIR,
+        impersonate: BrowserType = BrowserType.chrome110,
     ):
-        """Initialize the reader."""
         super().__init__(
             no_cache=no_cache,
             no_store=no_store,
@@ -501,57 +505,58 @@ class BaseRequestsReader(BaseReader):
             proxy=proxy,
             data_dir=data_dir,
         )
+        self.impersonate = impersonate
+        self._session = None
 
-        self._session = self._init_session()
+    def _get_session(self) -> AsyncSession:
+        if self._session is None:
+            self._session = AsyncSession(
+                impersonate=self.impersonate,
+                proxies=self.proxy(),
+                timeout=30
+            )
+        return self._session
 
-    def _init_session(self) -> requests.Session:
-        session = cloudscraper.create_scraper(
-            browser={"browser": "chrome", "platform": "linux", "mobile": False}
-        )
-        session.proxies.update(self.proxy())
-        return session
-
-    def _download_and_save(
+    async def _download_and_save(
         self,
         url: str,
         filepath: Optional[Path] = None,
         var: Optional[Union[str, Iterable[str]]] = None,
     ) -> IO[bytes]:
-        """Download file at url to filepath. Overwrites if filepath exists."""
         for i in range(5):
             try:
-                response = self._session.get(url, stream=True)
-                time.sleep(self.rate_limit + random.random() * self.max_delay)
-                response.raise_for_status()
+                session = self._get_session()
+                response = await session.get(url)
+                
                 if var is not None:
                     if isinstance(var, str):
                         var = [var]
-                    var_names = "|".join(var)
-                    template_understat = rb"(%b)+[\s\t]*=[\s\t]*JSON\.parse\('(.*)'\)"
-                    pattern_understat = template_understat % bytes(var_names, encoding="utf-8")
-                    results = re.findall(pattern_understat, response.content)
-                    data = {
-                        key.decode("unicode_escape"): json.loads(value.decode("unicode_escape"))
-                        for key, value in results
-                    }
+                    pattern = re.compile(rf"({'|'.join(var)})\s*=\s*JSON\.parse\('(.*?)'\)", re.DOTALL)
+                    matches = pattern.findall(response.text)
+                    data = {key: json.loads(value.replace("\\'", "'")) for key, value in matches}
                     payload = json.dumps(data).encode("utf-8")
                 else:
                     payload = response.content
+                
                 if not self.no_store and filepath is not None:
+                    filepath.parent.mkdir(parents=True, exist_ok=True)
                     with filepath.open(mode="wb") as fh:
                         fh.write(payload)
                 return io.BytesIO(payload)
-            except Exception:
+            
+            except Exception as e:
                 logger.exception(
-                    "Error while scraping %s. Retrying... (attempt %d of 5).",
-                    url,
-                    i + 1,
+                    "Error while scraping %s (attempt %d/5): %s",
+                    url, i+1, str(e)
                 )
-                self._session = self._init_session()
-                continue
+                self._session = None  # Reset session on error
+                await asyncio.sleep(i * 2)
+        
+        raise ConnectionError(f"Could not download {url} after 5 attempts")
 
-        raise ConnectionError(f"Could not download {url}.")
-
+    async def close(self):
+        if self._session:
+            await self._session.close()
 
 class BaseSeleniumReader(BaseReader):
     """Base class for readers that use Selenium."""

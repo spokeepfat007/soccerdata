@@ -8,7 +8,7 @@ from typing import IO, Callable, Optional, Union
 import pandas as pd
 from unidecode import unidecode
 
-from ._common import BaseRequestsReader, add_alt_team_names, standardize_colnames
+from ._common import BaseAsyncRequestsReader, add_alt_team_names, standardize_colnames
 from ._config import DATA_DIR, NOCACHE, NOSTORE, TEAMNAME_REPLACEMENTS
 
 CLUB_ELO_DATADIR = DATA_DIR / "ClubElo"
@@ -19,7 +19,7 @@ def _parse_csv(data: IO[bytes]) -> pd.DataFrame:
     return pd.read_csv(data, parse_dates=["From", "To"], date_format="%Y-%m-%d")
 
 
-class ClubElo(BaseRequestsReader):
+class ClubElo(BaseAsyncRequestsReader):
     """Provides pd.DataFrames from CSV API at http://api.clubelo.com.
 
     Data will be downloaded as necessary and cached locally in
@@ -69,7 +69,7 @@ class ClubElo(BaseRequestsReader):
         """Initialize a new ClubElo reader."""
         super().__init__(proxy=proxy, no_cache=no_cache, no_store=no_store, data_dir=data_dir)
 
-    def read_by_date(self, date: Optional[Union[str, datetime]] = None) -> pd.DataFrame:
+    async def read_by_date(self, date: Optional[Union[str, datetime]] = None) -> pd.DataFrame:
         """Retrieve ELO scores for all teams at specified date.
 
         Elo scores are available as early as 1939. Values before 1960 should
@@ -104,7 +104,7 @@ class ClubElo(BaseRequestsReader):
         filepath = self.data_dir / f"{datestring}.csv"
         url = f"{CLUB_ELO_API}/{datestring}"
 
-        data = self.get(url, filepath)
+        data = await self.get(url, filepath)
 
         return (
             _parse_csv(data)
@@ -119,7 +119,7 @@ class ClubElo(BaseRequestsReader):
             .set_index("team")
         )
 
-    def read_team_history(
+    async def read_team_history(
         self, team: str, max_age: Union[int, timedelta] = 1
     ) -> Optional[pd.DataFrame]:
         """Retrieve full ELO history for one club.
@@ -154,7 +154,7 @@ class ClubElo(BaseRequestsReader):
         for _team in teams_to_check:
             filepath = self.data_dir / f"{_team}.csv"
             url = f"{CLUB_ELO_API}/{_team}"
-            data = self.get(url, filepath, max_age)
+            data = await self.get(url, filepath, max_age)
 
             df = (
                 _parse_csv(data)

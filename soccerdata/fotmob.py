@@ -9,14 +9,14 @@ from typing import Callable, Optional, Union
 import pandas as pd
 import requests
 
-from ._common import BaseRequestsReader, add_standardized_team_name, make_game_id
+from ._common import BaseAsyncRequestsReader, add_standardized_team_name, make_game_id
 from ._config import DATA_DIR, NOCACHE, NOSTORE, TEAMNAME_REPLACEMENTS, logger
 
 FOTMOB_DATADIR = DATA_DIR / "FotMob"
 FOTMOB_API = "https://www.fotmob.com/api/"
 
 
-class FotMob(BaseRequestsReader):
+class FotMob(BaseAsyncRequestsReader):
     """Provides pd.DataFrames from data available at http://www.fotmob.com.
 
     Data will be downloaded as necessary and cached locally in

@@ -4,34 +4,44 @@ import pandas as pd
 import pytest
 
 from soccerdata.understat import Understat
+from soccerdata._common import BaseAsyncRequestsReader
+from pathlib import Path
+@pytest.mark.asyncio
+async def test_download_and_save_not_cached():
+    reader = BaseAsyncRequestsReader()
+    url = "http://api.clubelo.com/Barcelona"
+    filepath = Path('tmp1') / "Barcelona.csv"
+    data = await reader._download_and_save(url, filepath)
+    assert isinstance(pd.read_csv(data), pd.DataFrame)
 
 
-def test_read_leagues(understat_epl_1516: Understat) -> None:
-    leagues = understat_epl_1516.read_leagues()
+@pytest.mark.asyncio
+async def test_read_leagues(understat_epl_1516: Understat) -> None:
+    leagues = await understat_epl_1516.read_leagues()
     assert isinstance(leagues, pd.DataFrame)
     assert len(leagues) == 1
 
-
-def test_read_seasons(understat_epl_1516: Understat) -> None:
-    seasons = understat_epl_1516.read_seasons()
+@pytest.mark.asyncio
+async def test_read_seasons(understat_epl_1516: Understat) -> None:
+    seasons = await understat_epl_1516.read_seasons()
     assert isinstance(seasons, pd.DataFrame)
     assert len(seasons) == 1
 
-
-def test_read_seasons_empty(understat_epl_9091: Understat) -> None:
-    seasons = understat_epl_9091.read_seasons()
+@pytest.mark.asyncio
+async def test_read_seasons_empty(understat_epl_9091: Understat) -> None:
+    seasons = await understat_epl_9091.read_seasons()
     assert isinstance(seasons, pd.DataFrame)
     assert len(seasons) == 0
 
-
-def test_read_schedule(understat_epl_1516: Understat) -> None:
-    schedule = understat_epl_1516.read_schedule()
+@pytest.mark.asyncio
+async def test_read_schedule(understat_epl_1516: Understat) -> None:
+    schedule = await understat_epl_1516.read_schedule()
     assert isinstance(schedule, pd.DataFrame)
     assert len(schedule) == 380
 
-
-def test_read_team_match_stats(understat_epl_1516: Understat) -> None:
-    team_match_stats = understat_epl_1516.read_team_match_stats()
+@pytest.mark.asyncio
+async def test_read_team_match_stats(understat_epl_1516: Understat) -> None:
+    team_match_stats = await understat_epl_1516.read_team_match_stats()
     assert isinstance(team_match_stats, pd.DataFrame)
     assert len(team_match_stats) == 380
 
