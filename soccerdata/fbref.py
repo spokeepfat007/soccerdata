@@ -136,7 +136,7 @@ class FBref(BaseAsyncRequestsReader):
             return datetime.now(tz=timezone.utc) >= season_ends
         return super()._is_complete(league, season)
 
-    def read_leagues(self, split_up_big5: bool = False) -> pd.DataFrame:
+    async def read_leagues(self, split_up_big5: bool = False) -> pd.DataFrame:
         """Retrieve selected leagues from the datasource.
 
         Parameters
@@ -151,7 +151,7 @@ class FBref(BaseAsyncRequestsReader):
         """
         url = f"{FBREF_API}/en/comps/"
         filepath = self.data_dir / "leagues.html"
-        reader = self.get(url, filepath)
+        reader = await self.get(url, filepath)
 
         # extract league links
         dfs = []
@@ -181,7 +181,7 @@ class FBref(BaseAsyncRequestsReader):
             )
         return df[df.index.isin(leagues)]
 
-    def read_seasons(self, split_up_big5: bool = False) -> pd.DataFrame:
+    async def read_seasons(self, split_up_big5: bool = False) -> pd.DataFrame:
         """Retrieve the selected seasons for the selected leagues.
 
         Parameters
@@ -201,7 +201,7 @@ class FBref(BaseAsyncRequestsReader):
         for lkey, league in df_leagues.iterrows():
             url = FBREF_API + league.url
             filepath = self.data_dir / filemask.format(lkey)
-            reader = self.get(url, filepath)
+            reader = await self.get(url, filepath)
 
             # extract season links
             tree = html.parse(reader)
@@ -230,7 +230,7 @@ class FBref(BaseAsyncRequestsReader):
         df = df.set_index(["league", "season"]).sort_index()
         return df.loc[(slice(None), self.seasons), ["format", "url"]]
 
-    def read_team_season_stats(
+    async def read_team_season_stats(
         self, stat_type: str = "standard", opponent_stats: bool = False
     ) -> pd.DataFrame:
         """Retrieve aggregated season stats for all teams in the selected leagues and seasons.
@@ -318,7 +318,7 @@ class FBref(BaseAsyncRequestsReader):
                 + (f"/{page}/squads/" if big_five else f"/{page}/" if tournament else "/")
                 + season.url.split("/")[-1]
             )
-            reader = self.get(url, filepath)
+            reader = await self.get(url, filepath)
 
             # parse HTML and select table
             tree = html.parse(reader)
@@ -347,7 +347,7 @@ class FBref(BaseAsyncRequestsReader):
             .sort_index()
         )
 
-    def read_team_match_stats(  # noqa: C901
+    async def read_team_match_stats(  # noqa: C901
         self,
         stat_type: str = "schedule",
         opponent_stats: bool = False,
@@ -458,7 +458,7 @@ class FBref(BaseAsyncRequestsReader):
                 )
 
             current_season = not self._is_complete(lkey, skey)
-            reader = self.get(url, filepath, no_cache=current_season and not force_cache)
+            reader = await self.get(url, filepath, no_cache=current_season and not force_cache)
 
             # parse HTML and select table
             tree = html.parse(reader)
@@ -533,7 +533,7 @@ class FBref(BaseAsyncRequestsReader):
             .loc[self.leagues]
         )
 
-    def read_player_season_stats(self, stat_type: str = "standard") -> pd.DataFrame:
+    async def read_player_season_stats(self, stat_type: str = "standard") -> pd.DataFrame:
         """Retrieve players from the datasource for the selected leagues and seasons.
 
         The following stat types are available:
@@ -611,7 +611,7 @@ class FBref(BaseAsyncRequestsReader):
                 + ("/players/" if big_five else "/")
                 + season.url.split("/")[-1]
             )
-            reader = self.get(url, filepath)
+            reader = await self.get(url, filepath)
             tree = html.parse(reader)
             # remove icons
             for elem in tree.xpath("//td[@data-stat='comp_level']//span"):
@@ -648,7 +648,7 @@ class FBref(BaseAsyncRequestsReader):
             .sort_index()
         )
 
-    def read_schedule(self, force_cache: bool = False) -> pd.DataFrame:
+    async def read_schedule(self, force_cache: bool = False) -> pd.DataFrame:
         """Retrieve the game schedule for the selected leagues and seasons.
 
         Parameters
@@ -676,7 +676,7 @@ class FBref(BaseAsyncRequestsReader):
             url_fixtures = FBREF_API + tree.xpath("//a[text()='Scores & Fixtures']")[0].get("href")
             filepath_fixtures = self.data_dir / f"schedule_{lkey}_{skey}.html"
             current_season = not self._is_complete(lkey, skey)
-            reader = self.get(
+            reader = await self.get(
                 url_fixtures,
                 filepath_fixtures,
                 no_cache=current_season and not force_cache,
@@ -740,7 +740,7 @@ class FBref(BaseAsyncRequestsReader):
             teams.append({"id": team.get("href").split("/")[3], "name": team.text.strip()})
         return teams
 
-    def read_player_match_stats(
+    async def read_player_match_stats(
         self,
         stat_type: str = "summary",
         match_id: Optional[Union[str, list[str]]] = None,
@@ -819,7 +819,7 @@ class FBref(BaseAsyncRequestsReader):
                 game["game_id"],
             )
             filepath = self.data_dir / filemask.format(game["game_id"])
-            reader = self.get(url, filepath)
+            reader = await self.get(url, filepath)
             tree = html.parse(reader)
             (home_team, away_team) = self._parse_teams(tree)
             id_format = "keeper_stats_{}" if stat_type == "keepers" else "stats_{}_" + stat_type
@@ -856,7 +856,7 @@ class FBref(BaseAsyncRequestsReader):
             .sort_index()
         )
 
-    def read_lineup(
+    async def read_lineup(
         self,
         match_id: Optional[Union[str, list[str]]] = None,
         force_cache: bool = False,
@@ -908,7 +908,7 @@ class FBref(BaseAsyncRequestsReader):
                 game["game_id"],
             )
             filepath = self.data_dir / filemask.format(game["game_id"])
-            reader = self.get(url, filepath)
+            reader = await self.get(url, filepath)
             tree = html.parse(reader)
             teams = self._parse_teams(tree)
             html_tables = tree.xpath("//div[@class='lineup']")
@@ -947,7 +947,7 @@ class FBref(BaseAsyncRequestsReader):
                 lineups.append(df_table)
         return pd.concat(lineups).set_index(["league", "season", "game"])
 
-    def read_events(
+    async def read_events(
         self,
         match_id: Optional[Union[str, list[str]]] = None,
         force_cache: bool = False,
@@ -1003,7 +1003,7 @@ class FBref(BaseAsyncRequestsReader):
                 game["game_id"],
             )
             filepath = self.data_dir / filemask.format(game["game_id"])
-            reader = self.get(url, filepath)
+            reader = await self.get(url, filepath)
             tree = html.parse(reader)
             teams = self._parse_teams(tree)
             for team, tid in zip(teams, ["a", "b"]):
@@ -1046,7 +1046,7 @@ class FBref(BaseAsyncRequestsReader):
             .dropna(how="all")
         )
 
-    def read_shot_events(
+    async def read_shot_events(
         self,
         match_id: Optional[Union[str, list[str]]] = None,
         force_cache: bool = False,
@@ -1102,7 +1102,7 @@ class FBref(BaseAsyncRequestsReader):
                 game["game_id"],
             )
             filepath = self.data_dir / filemask.format(game["game_id"])
-            reader = self.get(url, filepath)
+            reader = await self.get(url, filepath)
             tree = html.parse(reader)
             html_table = tree.find("//table[@id='shots_all']")
             if html_table is not None:
