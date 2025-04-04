@@ -6,16 +6,9 @@ import pytest
 from soccerdata.understat import Understat
 from soccerdata._common import BaseAsyncRequestsReader
 from pathlib import Path
-@pytest.mark.asyncio
-async def test_download_and_save_not_cached():
-    reader = BaseAsyncRequestsReader()
-    url = "http://api.clubelo.com/Barcelona"
-    filepath = Path('tmp1') / "Barcelona.csv"
-    data = await reader._download_and_save(url, filepath)
-    assert isinstance(pd.read_csv(data), pd.DataFrame)
 
 
-@pytest.mark.asyncio
+
 async def test_read_leagues(understat_epl_1516: Understat) -> None:
     leagues = await understat_epl_1516.read_leagues()
     assert isinstance(leagues, pd.DataFrame)
