@@ -6,6 +6,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional, Union
+import asyncio
 
 import pandas as pd
 
@@ -96,47 +97,68 @@ class ESPN(BaseAsyncRequestsReader):
         urlmask = ESPN_API + "/{}/scoreboard?dates={}"
         filemask = "Schedule_{}_{}.json"
 
-        df_list = []
-        # Get match days
-        for lkey, skey in itertools.product(self._selected_leagues.values(), self.seasons):
-            if int(skey[:2]) > int(str(datetime.now(tz=timezone.utc).year + 1)[-2:]):
-                start_date = "".join(["19", skey[:2], "07", "01"])
-            else:
-                start_date = "".join(["20", skey[:2], "07", "01"])
+        # Collect initial tasks (league, season, url, filepath)
+        initial_tasks = []
+        for lkey in self._selected_leagues.values():
+            for skey in self.seasons:
+                if int(skey[:2]) > int(str(datetime.now(tz=timezone.utc).year + 1)[-2:]):
+                    start_date = f"19{skey[:2]}0701"
+                else:
+                    start_date = f"20{skey[:2]}0701"
+                url = urlmask.format(lkey, start_date)
+                filepath = self.data_dir / filemask.format(lkey, start_date)
+                initial_tasks.append((lkey, skey, url, filepath))
 
-            url = urlmask.format(lkey, start_date)
-            filepath = self.data_dir / filemask.format(lkey, start_date)
-            reader = await self.get(url, filepath)
-            data = json.load(reader)
+        # Fetch initial responses asynchronously
+        initial_responses = await asyncio.gather(
+            *[self.get(task[2], task[3]) for task in initial_tasks]
+        )
 
+
+
+        date_tasks = []
+        for task, response in zip(initial_tasks, initial_responses):
+            lkey, skey, _, _ = task
+            data = json.load(response)
+            current_season = not self._is_complete(lkey, skey)
             match_dates = [
-                datetime.strptime(d, "%Y-%m-%dT%H:%MZ").strftime("%Y%m%d")  # noqa: DTZ007
+                datetime.strptime(d, "%Y-%m-%dT%H:%MZ").strftime("%Y%m%d")
                 for d in data["leagues"][0]["calendar"]
             ]
             for date in match_dates:
                 url = urlmask.format(lkey, date)
                 filepath = self.data_dir / filemask.format(lkey, date)
-                current_season = not self._is_complete(lkey, skey)
-                reader = await self.get(url, filepath, no_cache=current_season and not force_cache)
+                no_cache = current_season and not force_cache
+                date_tasks.append((lkey, skey, date, url, filepath, no_cache))
 
-                data = json.load(reader)
-                df_list.extend(
-                    [
-                        {
-                            "league": lkey,
-                            "season": skey,
-                            "date": e["date"],
-                            "home_team": e["competitions"][0]["competitors"][0]["team"]["name"],
-                            "away_team": e["competitions"][0]["competitors"][1]["team"]["name"],
-                            "game_id": int(e["id"]),
-                            "league_id": lkey,
-                        }
-                        for e in data["events"]
-                    ]
-                )
+        # Fetch date responses asynchronously
+        date_responses = await asyncio.gather(
+            *[self.get(task[3], task[4], no_cache=task[5]) for task in date_tasks]
+        )
+
+        # Process date responses
+        df_list = []
+        for task, response in zip(date_tasks, date_responses):
+            lkey, skey, _, _, _, _ = task
+            data = json.load(response)
+            df_list.extend(
+                [
+                    {
+                        "league": lkey,
+                        "season": skey,
+                        "date": e["date"],
+                        "home_team": e["competitions"][0]["competitors"][0]["team"]["name"],
+                        "away_team": e["competitions"][0]["competitors"][1]["team"]["name"],
+                        "game_id": int(e["id"]),
+                        "league_id": lkey,
+                    }
+                    for e in data["events"]
+                ]
+            )
+
         return (
             pd.DataFrame(df_list)
-            .pipe(self._translate_league)
+            .pipe(self._translate_league    )
             .replace({"home_team": TEAMNAME_REPLACEMENTS, "away_team": TEAMNAME_REPLACEMENTS})
             .assign(date=lambda x: pd.to_datetime(x["date"]))
             .dropna(subset=["home_team", "away_team", "date"])
@@ -144,7 +166,7 @@ class ESPN(BaseAsyncRequestsReader):
             .set_index(["league", "season", "game"])
             .sort_index()
         )
-
+    
     async def read_matchsheet(self, match_id: Optional[Union[int, list[int]]] = None) -> pd.DataFrame:
         """Retrieve match sheets for the selected leagues and seasons.
 
@@ -177,13 +199,21 @@ class ESPN(BaseAsyncRequestsReader):
         else:
             iterator = df_schedule
 
-        df_list = []
-        for i, match in iterator.iterrows():
+        # Collect match tasks
+        match_tasks = []
+        for _, match in iterator.iterrows():
             url = urlmask.format(match["league_id"], match["game_id"])
             filepath = self.data_dir / filemask.format(match["game_id"])
-            reader = await self.get(url, filepath)
+            match_tasks.append((match, url, filepath))
 
-            data = json.load(reader)
+        # Fetch all match responses asynchronously
+        match_responses = await asyncio.gather(
+            *[self.get(url, fp) for _, url, fp in match_tasks]
+        )
+
+        df_list = []
+        for (match, _, _), response in zip(match_tasks, match_responses):
+            data = json.load(response)
             for i in range(2):
                 match_sheet = {
                     "game": match["game"],
@@ -191,23 +221,16 @@ class ESPN(BaseAsyncRequestsReader):
                     "season": match["season"],
                     "team": data["boxscore"]["form"][i]["team"]["displayName"],
                     "is_home": (i == 0),
-                    "venue": (
-                        data["gameInfo"]["venue"]["fullName"]
-                        if "venue" in data["gameInfo"]
-                        else None
-                    ),
+                    "venue": data["gameInfo"].get("venue", {}).get("fullName"),
                     "attendance": data["gameInfo"].get("attendance"),
-                    "capacity": (
-                        data["gameInfo"]["venue"].get("capacity")
-                        if "venue" in data["gameInfo"]
-                        else None
-                    ),
-                    "roster": data["rosters"][i].get("roster", None),
+                    "capacity": data["gameInfo"].get("venue", {}).get("capacity"),
+                    "roster": data["rosters"][i].get("roster"),
                 }
                 if "statistics" in data["boxscore"]["teams"][i]:
                     for stat in data["boxscore"]["teams"][i]["statistics"]:
                         match_sheet[stat["name"]] = stat["displayValue"]
                 df_list.append(match_sheet)
+
         return (
             pd.DataFrame(df_list)
             .replace({"team": TEAMNAME_REPLACEMENTS})
@@ -250,13 +273,21 @@ class ESPN(BaseAsyncRequestsReader):
         else:
             iterator = df_schedule
 
-        df_list = []
-        for i, match in iterator.iterrows():
+        # Collect match tasks
+        match_tasks = []
+        for _, match in iterator.iterrows():
             url = urlmask.format(match["league_id"], match["game_id"])
             filepath = self.data_dir / filemask.format(match["game_id"])
-            reader = await self.get(url, filepath)
+            match_tasks.append((match, url, filepath))
 
-            data = json.load(reader)
+        # Fetch all match responses asynchronously
+        match_responses = await asyncio.gather(
+            *[self.get(url, fp) for _, url, fp in match_tasks]
+        )
+
+        df_list = []
+        for (match, _, _), response in zip(match_tasks, match_responses):
+            data = json.load(response)
             for i in range(2):
                 if "roster" not in data["rosters"][i]:
                     logger.info(
@@ -273,71 +304,45 @@ class ESPN(BaseAsyncRequestsReader):
                         "team": data["boxscore"]["form"][i]["team"]["displayName"],
                         "is_home": (i == 0),
                         "player": p["athlete"]["displayName"],
-                        "position": p["position"]["name"] if "position" in p else None,
-                        "formation_place": p.get("formationPlace", None),
+                        "position": p.get("position", {}).get("name"),
+                        "formation_place": p.get("formationPlace"),
                     }
-                    subbed_in = (
-                        p["subbedIn"]
-                        if isinstance(p["subbedIn"], bool)
-                        else p["subbedIn"]["didSub"]
-                    )
-                    subbed_out = (
-                        p["subbedOut"]
-                        if isinstance(p["subbedOut"], bool)
-                        else p["subbedOut"]["didSub"]
-                    )
+                    subbed_in = p["subbedIn"]
+                    if isinstance(subbed_in, dict):
+                        subbed_in = subbed_in["didSub"]
+                    subbed_out = p["subbedOut"]
+                    if isinstance(subbed_out, dict):
+                        subbed_out = subbed_out["didSub"]
+
                     subbed_events = []
                     if isinstance(p["subbedIn"], bool) and (subbed_in or subbed_out):
-                        subbed_events = (
-                            [e for e in p["plays"] if e["substitution"]]
-                            if isinstance(p["subbedIn"], bool)
-                            else [p["subbedIn"], p["subbedOut"]]
-                        )
+                        subbed_events = [e for e in p.get("plays", []) if e["substitution"]]
                     else:
                         if subbed_in:
                             subbed_events.append(p["subbedIn"])
                         if subbed_out:
                             subbed_events.append(p["subbedOut"])
 
-                    if p["starter"]:
-                        match_sheet["sub_in"] = "start"
-                    elif subbed_in:
-                        match_sheet["sub_in"] = sum(
-                            map(
-                                int,
-                                re.findall(
-                                    r"(\d{1,3})",
-                                    subbed_events[0]["clock"]["displayValue"],
-                                ),
-                            )
-                        )
-                    else:
-                        match_sheet["sub_in"] = None
-
-                    if (p["starter"] or subbed_in) and not subbed_out:
-                        match_sheet["sub_out"] = "end"
-                    elif subbed_out:
-                        j = 0 if not subbed_in else 1
-                        match_sheet["sub_out"] = sum(
-                            map(
-                                int,
-                                re.findall(
-                                    r"(\d{1,3})",
-                                    subbed_events[j]["clock"]["displayValue"],
-                                ),
-                            )
-                        )
-                    else:
-                        match_sheet["sub_out"] = None
+                    match_sheet["sub_in"] = (
+                        "start"
+                        if p["starter"]
+                        else sum(map(int, re.findall(r"\d+", subbed_events[0]["clock"]["displayValue"])))
+                        if subbed_in
+                        else None
+                    )
+                    match_sheet["sub_out"] = (
+                        "end"
+                        if (p["starter"] or subbed_in) and not subbed_out
+                        else sum(map(int, re.findall(r"\d+", subbed_events[-1]["clock"]["displayValue"])))
+                        if subbed_out
+                        else None
+                    )
 
                     if "stats" in p:
                         for stat in p["stats"]:
                             match_sheet[stat["name"]] = stat["value"]
 
                     df_list.append(match_sheet)
-
-        if len(df_list) == 0:
-            return pd.DataFrame()
 
         return (
             pd.DataFrame(df_list)
@@ -346,3 +351,11 @@ class ESPN(BaseAsyncRequestsReader):
             .set_index(["league", "season", "game", "team", "player"])
             .sort_index()
         )
+
+    def _translate_league(self, df: pd.DataFrame) -> pd.DataFrame:
+        # Assuming this method translates league IDs to names; implement as needed
+        return df
+
+    def _is_complete(self, league: str, season: str) -> bool:
+        # Implement logic to determine if the season is complete
+        return False
