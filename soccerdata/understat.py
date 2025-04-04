@@ -551,7 +551,7 @@ class Understat(BaseAsyncRequestsReader):
         -------
         pd.DataFrame
         """
-        df_schedule = self.read_schedule(include_matches_without_data=False)
+        df_schedule = await self.read_schedule(include_matches_without_data=False)
         df_results = self._select_matches(df_schedule, match_id)
 
         shots = []

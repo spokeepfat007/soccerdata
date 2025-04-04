@@ -42,7 +42,7 @@ class SeasonCode(Enum):
     MULTI_YEAR = "multi-year"
 
     @staticmethod
-    async def from_league(league: str) -> "SeasonCode":
+    def from_league(league: str) -> "SeasonCode":
         """Return the default season code for a league.
 
         Parameters
@@ -66,11 +66,11 @@ class SeasonCode(Enum):
         if "season_code" in select_league_dict:
             return SeasonCode(select_league_dict["season_code"])
         start_month = datetime.strptime(  # noqa: DTZ007
-            await select_league_dict.get("season_start", "Aug"),
+            select_league_dict.get("season_start", "Aug"),
             "%b",
         ).month
         end_month = datetime.strptime(  # noqa: DTZ007
-            await select_league_dict.get("season_end", "May"),
+            select_league_dict.get("season_end", "May"),
             "%b",
         ).month
         return SeasonCode.MULTI_YEAR if (end_month - start_month) < 0 else SeasonCode.SINGLE_YEAR
