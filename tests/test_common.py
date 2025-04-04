@@ -62,10 +62,10 @@ async def test_download_and_save_no_cache_filepath(tmp_path):
     assert not filepath.exists()
 
 
-def test_download_and_save_variable_no_store_no_filepath():
+async def test_download_and_save_variable_no_store_no_filepath():
     reader = BaseAsyncRequestsReader(no_store=True)
     url = "https://understat.com/"
-    data = reader._download_and_save(url, filepath=None, var="statData")
+    data = await reader._download_and_save(url, filepath=None, var="statData")
     stats = json.load(data)
     assert isinstance(stats, dict)
     assert "statData" in stats
